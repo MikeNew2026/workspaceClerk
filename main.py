@@ -230,5 +230,5 @@ def start(root_dir):
 if __name__ == '__main__':
     from pathlib import Path
 
-    root_dir_path = Path(__file__).parent
+    root_dir_path = Path(r'C:\Users\MikeCoder\Desktop\test')
     start(root_dir=root_dir_path)
