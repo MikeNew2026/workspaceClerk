@@ -14,7 +14,6 @@ def run_cmd(command, cwd, waiting_subprocess: bool = False) -> subprocess.Comple
     if not waiting_subprocess and 'windows' in platform.system().lower():
         # для windows запуск особый (так как сессия зависает)
         command = f'start "UV Setup" cmd /c "{command}"'
-        # print(command)
         res = subprocess.run(command, shell=True, cwd=cwd, text=True, capture_output=True, encoding=encoding)
         return res
     else:  # для linux /  macOS

@@ -1,7 +1,8 @@
 from pathlib import Path
 from core.commons import run_cmd
 from core.utils.manager_toml import TomlManager
-from core import Status, ProjectInfo, TOML_FILE_NAME
+from core.models import Status, ProjectInfo
+from core.constants import TOML_FILE_NAME
 
 
 class ManagerProject:

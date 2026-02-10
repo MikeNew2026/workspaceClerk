@@ -1,9 +1,12 @@
 from pathlib import Path
 from core.commons import run_cmd
+from core.models import Status, Package, Command
+from core.constants import TOML_FILE_NAME
 from core.utils.manager_toml import TomlManager
-from core import Status, TOML_FILE_NAME, Package, Command
+from typing import Callable
 import os
 import shutil
+from typing import Generator
 
 
 class ManagerPackages:
@@ -18,7 +21,7 @@ class ManagerPackages:
         data = TomlManager(toml_path=self._root_path / TOML_FILE_NAME)
         return data.is_package_in_workspaces(package=str(self._src_local_path / pckg_name))
 
-    def _is_package_exists(self, pkg_name: str) -> Status:
+    def is_package_exists(self, pkg_name: str) -> Status:
         # Проверки существования пакета
         if self._is_package_installed(pckg_name=pkg_name):
             return Status(
@@ -43,7 +46,7 @@ class ManagerPackages:
         """Создание нового пакета"""
 
         # проверка существует ли уже пакет
-        status = self._is_package_exists(pkg_name)
+        status = self.is_package_exists(pkg_name)
         if not status.success:
             return status
 
@@ -82,59 +85,101 @@ class ManagerPackages:
 
         return Status(success=True, message=f'✔ Пакет `{package_path}` создан')
 
-    def get_packages_list(self) -> tuple[Status, None | list[Package]]:
-
-        packages_list = []
-
+    def packages_get_list(self) -> Generator[Package, Status, Status]:
         if not self._src_path.exists():
             return (
                 Status(
                     success=False,
                     message=f'⚠ Не найдена директория с пакетами по пути `{self._src_path}`'
-                ),
-                None)
+                ))
 
         for path in self._src_path.iterdir():
             if path.is_dir() and (path / TOML_FILE_NAME).exists():
-                data = TomlManager(path / TOML_FILE_NAME)
+                package_data = TomlManager(path / TOML_FILE_NAME)
+                project_data = TomlManager(self._root_path / TOML_FILE_NAME)
 
                 package = Package(
-                    name=data.name,
-                    dependencies=data.depends,
-                    local_path=self._src_path / data.name,
-                    is_installed=False,
-                    package_connect=Command(
-                        cmd=self.make_packages_connect_func(data.name),
+                    name=package_data.name,
+                    dependencies=package_data.depends,
+                    local_path=self._src_path / package_data.name,
+
+                    is_installed=project_data.is_package_in_workspaces(
+                        package=str(self._src_local_path / package_data.name)),
+
+                    connect=Command(
+                        cmd=self.make_packages_connect_func(pkg_name=package_data.name),
                         description='подключить пакет',
                         parametrs=(),
                     ),
-                    package_disconnect=Command(
-                        cmd=self.make_packages_disconnect_func(data.name),
+                    disconnect=Command(
+                        cmd=self.make_packages_disconnect_func(pkg_name=package_data.name),
                         description='отключить пакет',
                         parametrs=(),
-                    )
+                    ),
+                    depends_add=Command(
+                        cmd=self.make_depends_add(pkg_name=package_data.name),
+                        description='установить depends в пакет',
+                        parametrs=('Устанавливаемые зависимости через пробел',),
+                    ),
+
+                    depends_remove=Command(
+                        description='удалить depends из пакета',
+                        cmd=self.make_depends_remove(pkg_name=package_data.name),
+                        parametrs=('удаляемые зависимости через пробел',),
+                    ),
                 )
-                packages_list.append(package)
+                yield package
 
-        return (
-            Status(
-                success=True,
-                message=f'✔ Информация о пакетах получена.'
-            ),
-            packages_list
-        )
+        return (Status(
+            success=True,
+            message=f'✔ Информация о пакетах получена.'
+        ))
 
-    def make_packages_connect_func(self, pkg_name):
-        def func():
-            cmd = f"uv add {self._src_path / pkg_name} &&  uv  sync"
-            run_cmd(command=cmd, cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
+    def make_packages_connect_func(self, pkg_name: str) -> Callable[[], Status]:
+        def func() -> Status:
+            toml_session = TomlManager(self._root_path / TOML_FILE_NAME)
+            if toml_session.is_package_in_workspaces(package=pkg_name):
+                return Status(
+                    success=False,
+                    message=f'⚠ Пакет `{self._src_local_path / pkg_name}` уже подключен.'
+                )
+
+            try:
+                cmd = f"uv add {self._src_local_path / pkg_name} &&  uv  sync"
+                run_cmd(command=cmd, cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
+
+                # проверить что пакет был подключен
+                toml_session = TomlManager(self._root_path / TOML_FILE_NAME)
+                if not toml_session.is_package_in_workspaces(package=pkg_name):
+                    return Status(
+                        success=False,
+                        message=f'⚠ Пакет `{self._src_local_path / pkg_name}` не был подключен.'
+                    )
+
+                return Status(
+                    success=True,
+                    message=f'✔ Пакет `{self._src_path / pkg_name}` подключен.'
+                )
+
+            except Exception as err:
+                return Status(
+                    success=False,
+                    message=f'⚠ Пакет `{self._src_path / pkg_name}` не подключен. Ошибка: {err}'
+                )
 
         return lambda: func()
 
-    def make_packages_disconnect_func(self, pkg_name):
+    def make_packages_disconnect_func(self, pkg_name: str) -> Callable[[], Status]:
         def func():
             # удаление пакета в главном toml (очистка его в depends, workspaces, sources)
             toml_session = TomlManager(toml_path=self._root_path / TOML_FILE_NAME)
+
+            if not toml_session.is_package_in_workspaces(package=pkg_name):
+                return Status(
+                    success=False,
+                    message=f'⚠ Пакет `{self._src_local_path / pkg_name}` отсутствует в списке подключенных.'
+                )
+
             toml_session.depends_remove(depend=pkg_name)
             toml_session.workspaces_remove(depend=pkg_name)
             toml_session.sources_remove(depend=pkg_name)
@@ -143,7 +188,70 @@ class ManagerPackages:
             run_cmd(command=f'uv remove {pkg_name}', cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
             run_cmd(command='uv sync', cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
 
+            return Status(
+                success=True,
+                message=f'✔ Пакет `{self._src_local_path / pkg_name}` отключен.'
+            )
+
         return lambda: func()
+
+    def make_depends_add(self, pkg_name: str) -> Callable[[str], Status]:
+        def func(depend):
+            # проверка что зависимости нет в пакете (чтобы не делать лишнюю работу)
+            toml_session = TomlManager(toml_path=self._src_path / pkg_name / TOML_FILE_NAME)
+            if toml_session.is_package_in_dependencies(package=depend):
+                return Status(
+                    success=False,
+                    message=f'⚠ Зависимость `{depend}` уже есть в пакете `{self._src_local_path / pkg_name}`.'
+                )
+
+            run_cmd(command=f'uv add {depend}', cwd=self._src_path / pkg_name,
+                    waiting_subprocess=self._waiting_subprocess)
+            run_cmd(command='uv sync', cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
+
+            # проверка что зависимость действительно была удалена
+            toml_session = TomlManager(toml_path=self._src_path / pkg_name / TOML_FILE_NAME)
+            if not toml_session.is_package_in_dependencies(package=depend):
+                return Status(
+                    success=False,
+                    message=f'⚠ Зависимость `{depend}` не была добавлена в пакет `{self._src_local_path / pkg_name}`, ошибка subprocess'
+                )
+
+            return Status(
+                success=True,
+                message=f'✔ Зависимость `{depend}` была добавлена в пакет `{self._src_local_path / pkg_name}`'
+            )
+
+        return lambda depend: func(depend)
+
+    def make_depends_remove(self, pkg_name: str) -> Callable[[str], Status]:
+        def func(depend):
+            # проверка что зависимости нет в пакете (чтобы не делать лишнюю работу)
+            toml_session = TomlManager(toml_path=self._src_path / pkg_name / TOML_FILE_NAME)
+            if not toml_session.is_package_in_dependencies(package=depend):
+                return Status(
+                    success=False,
+                    message=f'⚠ Зависимости `{depend}` нет в пакете `{self._src_local_path / pkg_name}`.'
+                )
+
+            run_cmd(command=f'uv remove {depend}', cwd=self._src_path / pkg_name,
+                    waiting_subprocess=self._waiting_subprocess)
+            run_cmd(command='uv sync', cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
+
+            # проверка что зависимость действительно была удалена
+            toml_session = TomlManager(toml_path=self._src_path / pkg_name / TOML_FILE_NAME)
+            if toml_session.is_package_in_dependencies(package=depend):
+                return Status(
+                    success=False,
+                    message=f'⚠ Зависимости `{depend}` не была удалена из пакета `{self._src_local_path / pkg_name}` ошибка subprocess.'
+                )
+
+            return Status(
+                success=True,
+                message=f'✔ Зависимость `{depend}` была удалена из пакета `{self._src_local_path / pkg_name}`'
+            )
+
+        return lambda depend: func(depend)
 
 
 if __name__ == '__main__':
@@ -153,7 +261,10 @@ if __name__ == '__main__':
         root_path_in=root_path,
         src_path_in=src_path,
     )
+    [print(i.name) for i in pm.packages_get_list()]
     # print(pm.package_create(pkg_name='app1'))
     # print(pm.package_create(pkg_name='app2'))
-    pm.get_packages_list()[1][0].package_connect.cmd()
-    # pm.get_packages_list()[1][0].package_disconnect.cmd()
+    # print(pm.get_packages_list()[1][0].connect.cmd())
+    # print(pm.get_packages_list()[1][0].disconnect.cmd())
+    # print(pm.get_packages_list()[1][0].depends_add.cmd('aiosqlite'))
+    # print(pm.get_packages_list()[1][0].depends_remove.cmd('aiosqlite'))
