@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from typing import Any
 from pathlib import Path
 
@@ -52,7 +52,7 @@ class Package:
 
     # is_depends_in_package: Command
     # is_depends_workspace: Command
-    # related_files: list[Path] = field(default_factory=list)  # заполняется во внешнем модуле
+    related_files: list[Path] = field(default_factory=list)  # заполняется во внешнем модуле
 
     def __str__(self):
         return f"name : {self.name} | is_installed : {self.is_installed} | dependencies : {self.dependencies}"

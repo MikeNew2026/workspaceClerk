@@ -5,14 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "app1",
+    "rich>=14.3.2",
     "tomli-w>=1.2.0",
 ]
 
 [tool.uv.workspace]
 members = [
-    "APP1",
+    "app1",
 ]
-
-[tool.uv.sources]
-app1 = { workspace = true }

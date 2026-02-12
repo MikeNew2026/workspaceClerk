@@ -5,8 +5,8 @@ from core.constants import TOML_FILE_NAME
 from core.utils.manager_toml import TomlManager
 from typing import Callable
 import os
-import shutil
 from typing import Generator
+from core.AST.ast_analize import AstImportsManager
 
 
 class ManagerPackages:
@@ -59,7 +59,7 @@ class ManagerPackages:
         project_path.mkdir(exist_ok=True, parents=True)
 
         # инициализация проекта и uv синхронизация
-        cmd = f'uv init && uv sync'
+        cmd = f'uv init --no-workspace && uv sync'
         run_cmd(command=cmd, cwd=package_path, waiting_subprocess=self._waiting_subprocess)
 
         # создание файла main.py в package/src/package
@@ -75,13 +75,13 @@ class ManagerPackages:
             os.remove(package_path / 'main.py')
 
         # удаление папки egg-info (она не нужна)
-        if (package_path / 'src' / f'{pkg_name.lower()}.egg-info').exists():
-            shutil.rmtree(package_path / 'src' / f'{pkg_name.lower()}.egg-info')
+        # if (package_path / 'src' / f'{pkg_name.lower()}.egg-info').exists():
+        #     shutil.rmtree(package_path / 'src' / f'{pkg_name.lower()}.egg-info')
 
         # очистить workspace в toml после создания пакета
-        toml_session = TomlManager(self._root_path / TOML_FILE_NAME)
-        toml_session.workspaces_remove(depend=pkg_name)
-        toml_session.write_toml()
+        # toml_session = TomlManager(self._root_path / TOML_FILE_NAME)
+        # toml_session.workspaces_remove(depend=pkg_name)
+        # toml_session.write_toml()
 
         return Status(success=True, message=f'✔ Пакет `{package_path}` создан')
 
@@ -92,6 +92,8 @@ class ManagerPackages:
                     success=False,
                     message=f'⚠ Не найдена директория с пакетами по пути `{self._src_path}`'
                 ))
+
+        ast_manager = AstImportsManager(root_path_in=self._root_path)
 
         for path in self._src_path.iterdir():
             if path.is_dir() and (path / TOML_FILE_NAME).exists():
@@ -127,7 +129,10 @@ class ManagerPackages:
                         cmd=self.make_depends_remove(pkg_name=package_data.name),
                         parametrs=('удаляемые зависимости через пробел',),
                     ),
+
+                    related_files=ast_manager.get_package_relative_files(self._src_path / package_data.name),
                 )
+
                 yield package
 
         return (Status(
@@ -138,14 +143,15 @@ class ManagerPackages:
     def make_packages_connect_func(self, pkg_name: str) -> Callable[[], Status]:
         def func() -> Status:
             toml_session = TomlManager(self._root_path / TOML_FILE_NAME)
-            if toml_session.is_package_in_workspaces(package=pkg_name):
+            if toml_session.is_package_in_workspaces(package=pkg_name) and toml_session.is_package_in_dependencies(
+                    package=pkg_name):
                 return Status(
                     success=False,
                     message=f'⚠ Пакет `{self._src_local_path / pkg_name}` уже подключен.'
                 )
 
             try:
-                cmd = f"uv add {self._src_local_path / pkg_name} &&  uv  sync"
+                cmd = f"uv add {self._src_local_path / pkg_name}"
                 run_cmd(command=cmd, cwd=self._root_path, waiting_subprocess=self._waiting_subprocess)
 
                 # проверить что пакет был подключен

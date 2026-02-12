@@ -220,31 +220,35 @@ class WorkspaceClerk:
 
         return status_list
 
+    def packages_list_get_console_render(
+            self,
+            offset: int = 0, limit: int = 100,
+            filter_packages: set | None = None, filter_exclude: bool = False,
+    ):
+        packages_list_generator = self.packages_list(
+            offset=offset,
+            limit=limit,
+            filter_packages=filter_packages,
+            filter_exclude=filter_exclude,
+
+        )
+
+        for pack in packages_list_generator:
+            print(f"Name: {pack.name}")
+            print(f"Status: {'ON' if pack.is_installed else 'OFF'}")
+            print(f"Depends : {pack.dependencies}")
+            if pack.related_files:
+                print(f"Related files:")
+                for related in pack.related_files:
+                    print(f"\t{related}")
+
 
 if __name__ == '__main__':
-    root_path = Path(r'C:\Users\MikeCoder\Desktop\test')
-    src_path = Path(r'C:\Users\MikeCoder\Desktop\test\src')
+    root_path = Path(r'C:\Users\MikeCoder\Desktop\DEMO')
+    src_path = Path(r'C:\Users\MikeCoder\Desktop\DEMO\src')
+
     wc = WorkspaceClerk(root_path_in=root_path, src_path_in=src_path)
-    # просмотр пакетов
-    wc.packages_create(packages={'app1000'})
-
-    # [print(i) for i in wc.packages_list(filter_packages={'app1', }, filter_exclude=False)]
-
-    # [print(i) for i in wc.packages_connect(packages={'app1', })]
-    # [print(i) for i in wc.packages_depends_add(package='app1', depends={'python-dotenv'})]
-    # [print(i) for i in wc.packages_depends_remove(package='app1', depends={'python-dotenv'})]
-    # [print(i) for i in wc.packages_disconnect_all()]
-    # [print(i) for i in wc.packages_disconnect(packages={'app1', 'app2', 'app3'})]
-    # [print(i) for i in wc.packages_connect_all()]
-    # [print(i) for i in wc.packages_disconnect_all()]
-
-    # [print(p) for p in wc.packages_list(filter_packages={'app1'}, filter_exclude=False)]
-    # [print(st) for st in wc.packages_connect_all(packages={'APP1', }, exclude=False)]
-    # [print(st) for st in wc.packages_disconnect_all(packages={'APP1', }, exclude=True)]
-
-    # print(wc.project_depends_add(depends={'python-dotenv'}))
-    # packages_order = {f"APP{i}" for i in range(1, 21)}
-    # [print(st) for st in wc.packages_create(packages=packages_order)]
-
-    # print(wc.project_depends_remove(depends={'python-dotenv'}))
-    # print(wc.project_get_info())
+    # [print(i) for i in wc.packages_create(packages={'app1'})]
+    [print(i) for i in wc.packages_connect(packages={'app1'})]
+    # [print(i) for i in wc.packages_disconnect(packages={'app1'})]
+    wc.packages_list_get_console_render()
